@@ -1,6 +1,7 @@
-import { expect } from "chai"
-import { SchemaBuilder, SB } from "../SchemaBuilder.js"
+import { SB, SchemaBuilder } from "../SchemaBuilder.js"
+
 import { JSONSchema } from "../JsonSchema.js"
+import { expect } from "chai"
 
 describe("Schema Builder", function () {
     it("should be initialized with a JSON schema", function () {
@@ -1059,5 +1060,280 @@ describe("Test Side Effects With global AJV config", function () {
         )
         SB.setGlobalValidationConfig({ allErrors: false })
         expect(() => testSchema.validate({} as any)).to.throw("Invalid parameters: data must have required property 'name'")
+    })
+})
+
+describe("Schema Builder Date Support", function () {
+    it("should create a date schema", function () {
+        const dateSchema = SB.dateSchema()
+        expect(dateSchema).to.exist
+        expect(dateSchema.schema.type).to.equal("string")
+        expect(dateSchema.schema.format).to.equal("date-time")
+    })
+
+    it("should create a nullable date schema", function () {
+        const dateSchema = SB.dateSchema({}, true)
+        expect(dateSchema).to.exist
+        expect(dateSchema.schema.type).to.deep.equal(["string", "null"])
+        expect(dateSchema.schema.format).to.equal("date-time")
+    })
+
+    it("should validate valid dates with date schema", function () {
+        const dateSchema = SB.dateSchema()
+        const validDate = new Date()
+        expect(() => dateSchema.validate(validDate)).to.not.throw()
+    })
+
+    it("should reject invalid dates with date schema", function () {
+        const dateSchema = SB.dateSchema()
+        expect(() => dateSchema.validate("not-a-date" as any)).to.throw()
+        expect(() => dateSchema.validate(123 as any)).to.throw()
+        expect(() => dateSchema.validate({} as any)).to.throw()
+    })
+
+    it("should accept null in nullable date schema", function () {
+        const dateSchema = SB.dateSchema({}, true)
+        expect(() => dateSchema.validate(null)).to.not.throw()
+    })
+
+    it("should add date property to schema", function () {
+        const schema = SB.emptySchema().addDate("createdAt")
+
+        expect(schema).to.exist
+        expect((schema.schema.properties?.createdAt as JSONSchema).type).to.equal("string")
+        expect((schema.schema.properties?.createdAt as JSONSchema).format).to.equal("date-time")
+        expect(schema.schema.required).to.deep.equal(["createdAt"])
+    })
+
+    it("should add optional date property to schema", function () {
+        const schema = SB.emptySchema().addDate("createdAt", {}, false)
+
+        expect(schema).to.exist
+        expect((schema.schema.properties?.createdAt as JSONSchema).type).to.equal("string")
+        expect((schema.schema.properties?.createdAt as JSONSchema).format).to.equal("date-time")
+        expect(schema.schema.required).to.be.undefined
+    })
+
+    it("should add nullable date property to schema", function () {
+        const schema = SB.emptySchema().addDate("createdAt", {}, true, true)
+
+        expect(schema).to.exist
+        expect((schema.schema.properties?.createdAt as JSONSchema).type).to.deep.equal(["string", "null"])
+        expect((schema.schema.properties?.createdAt as JSONSchema).format).to.equal("date-time")
+    })
+
+    it("should validate schema with date properties", function () {
+        const schema = SB.emptySchema().addString("name").addDate("createdAt").addDate("updatedAt", {}, false).addDate("deletedAt", {}, false, true)
+
+        const validData = {
+            name: "Test",
+            createdAt: new Date(),
+            updatedAt: new Date(),
+            deletedAt: null,
+        }
+
+        expect(() => schema.validate(validData)).to.not.throw()
+    })
+
+    it("should reject invalid data in schema with date properties", function () {
+        const schema = SB.emptySchema().addString("name").addDate("createdAt").addDate("updatedAt", {}, false)
+
+        const invalidData = {
+            name: "Test",
+            createdAt: "not-a-date",
+            updatedAt: new Date(),
+        }
+
+        expect(() => schema.validate(invalidData as any)).to.throw()
+    })
+
+    it("should validate array of dates", function () {
+        const schema = SB.emptySchema().addArray("dates", SB.dateSchema())
+
+        const validData = {
+            dates: [new Date(), new Date(), new Date()],
+        }
+
+        expect(() => schema.validate(validData)).to.not.throw()
+    })
+
+    it("should infer date type from JSON Schema with date-time format", function () {
+        const jsonSchema = {
+            type: "object",
+            properties: {
+                id: { type: "string" },
+                timestamp: {
+                    type: "string",
+                    format: "date-time",
+                },
+            },
+            required: ["id", "timestamp"],
+        } as const
+
+        const schema = SB.fromJsonSchema(jsonSchema)
+
+        // We can't directly test type inference, but we can test that validation works correctly
+        const validData = {
+            id: "123",
+            timestamp: new Date(),
+        }
+
+        expect(() => schema.validate(validData)).to.not.throw()
+    })
+
+    it("should reject invalid dates when inferring from JSON Schema", function () {
+        const jsonSchema = {
+            type: "object",
+            properties: {
+                id: { type: "string" },
+                timestamp: {
+                    type: "string",
+                    format: "date-time",
+                },
+            },
+            required: ["id", "timestamp"],
+        } as const
+
+        const schema = SB.fromJsonSchema(jsonSchema)
+
+        const invalidData = {
+            id: "123",
+            timestamp: "not-a-date",
+        }
+
+        expect(() => schema.validate(invalidData as any)).to.throw()
+    })
+
+    it("should validate complex object with nested date properties", function () {
+        const userSchema = SB.objectSchema(
+            { title: "User" },
+            {
+                id: SB.stringSchema(),
+                name: SB.stringSchema(),
+                created: SB.dateSchema(),
+                profile: SB.objectSchema(
+                    {},
+                    {
+                        lastLogin: SB.dateSchema(),
+                        joinDate: SB.dateSchema(),
+                        preferences: SB.objectSchema(
+                            {},
+                            {
+                                reminderDate: SB.dateSchema({}, false),
+                            },
+                        ),
+                    },
+                ),
+                loginHistory: SB.arraySchema(SB.dateSchema()),
+                meta: SB.objectSchema(
+                    {},
+                    {
+                        updatedDates: SB.arraySchema(SB.dateSchema()),
+                    },
+                ),
+            },
+        )
+
+        const now = new Date()
+        const yesterday = new Date(now.getTime() - 24 * 60 * 60 * 1000)
+        const lastWeek = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000)
+
+        const validUser = {
+            id: "user123",
+            name: "Test User",
+            created: now,
+            profile: {
+                lastLogin: now,
+                joinDate: lastWeek,
+                preferences: {
+                    reminderDate: yesterday,
+                },
+            },
+            loginHistory: [lastWeek, yesterday, now],
+            meta: {
+                updatedDates: [yesterday, now],
+            },
+        }
+
+        expect(() => userSchema.validate(validUser)).to.not.throw()
+    })
+
+    it("should work with property accessors for date fields", function () {
+        const schema = SB.emptySchema().addString("name").addDate("createdAt")
+
+        const pa = schema.getPropertyAccessor()
+        const createdAtPA = pa.createdAt
+
+        const testObj = {
+            name: "Test",
+            createdAt: new Date(),
+        }
+
+        const createdAtValue = createdAtPA.get(testObj)
+        expect(createdAtValue).to.be.instanceOf(Date)
+        expect(createdAtValue.getTime()).to.equal(testObj.createdAt.getTime())
+
+        const newDate = new Date()
+        const updatedObj = createdAtPA.set(testObj, newDate)
+        expect(updatedObj.createdAt).to.equal(newDate)
+    })
+
+    it("should validate a list of objects with date properties", function () {
+        const schema = SB.emptySchema().addString("name").addDate("date")
+
+        const validList = [
+            { name: "Item 1", date: new Date() },
+            { name: "Item 2", date: new Date() },
+            { name: "Item 3", date: new Date() },
+        ]
+
+        expect(() => schema.validateList(validList)).to.not.throw()
+
+        const invalidList = [
+            { name: "Item 1", date: new Date() },
+            { name: "Item 2", date: "not-a-date" },
+            { name: "Item 3", date: new Date() },
+        ]
+
+        expect(() => schema.validateList(invalidList as any)).to.throw()
+    })
+
+    it("should handle date format with different schema transformations", function () {
+        // Create a schema with date fields
+        const original = SB.emptySchema().addString("id").addDate("created").addDate("updated", {}, false)
+
+        // Test optional transformation
+        const optional = original.toOptionals()
+        const optionalValidData = {
+            id: "123",
+            created: new Date(),
+        }
+        expect(() => optional.validate(optionalValidData)).to.not.throw()
+
+        // Test picking properties
+        const picked = original.pickProperties(["id", "created"])
+        const pickedValidData = {
+            id: "123",
+            created: new Date(),
+        }
+        expect(() => picked.validate(pickedValidData)).to.not.throw()
+
+        // Test with renamed property
+        const renamed = original.renameProperty("created", "creationDate")
+        const renamedValidData = {
+            id: "123",
+            creationDate: new Date(),
+            updated: new Date(),
+        }
+        expect(() => renamed.validate(renamedValidData)).to.not.throw()
+    })
+
+    it("should use default when specified for date schema", function () {
+        const now = new Date()
+        const schema = SB.dateSchema({ default: now.toISOString() })
+
+        // This is just testing that we can create a schema with a default date
+        // The actual value coercion would be handled by AJV when useDefaults is true
+        expect(schema.schema.default).to.equal(now.toISOString())
     })
 })

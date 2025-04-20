@@ -5,7 +5,7 @@ Serafin Schema Builder is a library that ease the creation of a JSON Schema and 
 ## Installation
 
 ```
-npm i @serafin/schema-builder
+npm i @progymedia/schema-builder
 ```
 
 ## Why Schema Builder?

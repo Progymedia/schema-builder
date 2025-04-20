@@ -286,6 +286,21 @@ export class SchemaBuilder<T> {
     }
 
     /**
+     * Create a date schema with ISO 8601 format (date-time)
+     */
+    static dateSchema<N extends boolean = false>(
+        schema: Pick<JSONSchema, JSONSchemaStringProperties> = {},
+        nullable?: N,
+    ): N extends true ? SchemaBuilder<Date | null> : SchemaBuilder<Date> {
+        let s: JSONSchema = {
+            ...cloneJSON(schema),
+            type: nullable ? ["string", "null"] : "string",
+            format: "date-time",
+        }
+        return new SchemaBuilder(s) as any
+    }
+
+    /**
      * Return a schema builder which validate any one of the provided schemas exclusively. "oneOf" as described by JSON Schema specifications.
      */
     static oneOf<S extends SchemaBuilder<any>[]>(...schemaBuilders: S): SchemaBuilder<OneOf<S>> {
@@ -622,6 +637,18 @@ export class SchemaBuilder<T> {
         nullable?: N,
     ): SchemaBuilder<{ [P in keyof Combine<T, U[], K, REQUIRED, N>]: Combine<T, U[], K, REQUIRED, N>[P] }> {
         return this.addProperty(propertyName, SchemaBuilder.arraySchema(items, schema, nullable), isRequired) as any
+    }
+
+    /**
+     * Add a date property (ISO 8601 format) to the schema properties
+     */
+    addDate<K extends keyof any, REQUIRED extends boolean = true, N extends boolean = false>(
+        propertyName: K,
+        schema: Pick<JSONSchema, JSONSchemaStringProperties> = {},
+        isRequired?: REQUIRED,
+        nullable?: N,
+    ): SchemaBuilder<{ [P in keyof Combine<T, Date, K, REQUIRED, N>]: Combine<T, Date, K, REQUIRED, N>[P] }> {
+        return this.addProperty(propertyName, SchemaBuilder.dateSchema(schema, nullable), isRequired) as any
     }
 
     /**
@@ -1059,15 +1086,42 @@ export class SchemaBuilder<T> {
      * Validate the given object against the schema. If the object is invalid an error is thrown with the appropriate details.
      */
     validate(o: T) {
+        // Convert Date objects to ISO strings before validation
+        const transformedData = this.transformDatesForValidation(o)
         // ensure validation function is cached
         this.cacheValidationFunction()
         // run validation
-        let valid = this.validationFunction(o)
+        let valid = this.validationFunction(transformedData)
         // check if an error needs to be thrown
         if (!valid) {
             throw validationError(this.ajv.errorsText(this.validationFunction.errors), this.validationFunction.errors)
         }
     }
+
+    /**
+     * Transform Date objects to ISO 8601 strings for validation
+     * @private
+     */
+    private transformDatesForValidation(data: any): any {
+        if (data instanceof Date) {
+            return data.toISOString()
+        }
+
+        if (Array.isArray(data)) {
+            return data.map((item) => this.transformDatesForValidation(item))
+        }
+
+        if (data !== null && typeof data === "object") {
+            const result: any = {}
+            for (const key in data) {
+                result[key] = this.transformDatesForValidation(data[key])
+            }
+            return result
+        }
+
+        return data
+    }
+
     protected ajv!: Ajv
     protected validationFunction!: ValidateFunction<T>
 
@@ -1075,10 +1129,12 @@ export class SchemaBuilder<T> {
      * Validate the given list of object against the schema. If any object is invalid, an error is thrown with the appropriate details.
      */
     validateList(list: T[]) {
+        // Transform dates to ISO strings
+        const transformedList = list.map((item) => this.transformDatesForValidation(item))
         // ensure validation function is cached
         this.cacheListValidationFunction()
         // run validation
-        let valid = this.listValidationFunction(list)
+        let valid = this.listValidationFunction(transformedList)
         // check if an error needs to be thrown
         if (!valid) {
             throw validationError(this.ajvList.errorsText(this.listValidationFunction.errors), this.listValidationFunction.errors)
@@ -1110,6 +1166,20 @@ export class SchemaBuilder<T> {
         if (!this.validationFunction || this.localValidationFunctionVersionNumber !== SchemaBuilder.globalAJVConfigVersionNumber) {
             this.localValidationFunctionVersionNumber = SchemaBuilder.globalAJVConfigVersionNumber
             this.ajv = new Ajv(this.ajvValidationConfig)
+
+            // Add a custom format handler for date-time
+            this.ajv.addFormat("date-time", {
+                type: "string",
+                validate: (dateTimeString: string) => {
+                    try {
+                        const date = new Date(dateTimeString)
+                        return !isNaN(date.getTime())
+                    } catch (e) {
+                        return false
+                    }
+                },
+            })
+
             addFormats(this.ajv)
             this.validationFunction = this.ajv.compile(this.schemaObject)
         }

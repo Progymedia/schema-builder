@@ -58,10 +58,22 @@ export interface JsonSchemaAdditionalProperties<T> {
 }
 
 /**
+ * Type used to detect format related type conversions
+ */
+export type JsonSchemaFormatType<FORMAT, TYPE> = FORMAT extends "date-time" ? (TYPE extends "string" ? Date : never) : never
+
+/**
+ * Transform the type of a string schema based on its format
+ */
+export type JsonSchemaStringWithFormat<TYPE, FORMAT> = FORMAT extends string ? JsonSchemaFormatType<FORMAT, TYPE> : TYPE extends "string" ? string : never
+
+/**
  * Type for json schema primitive types
  */
-export type JsonSchemaPrimitiveType<TYPE, ITEM, PROPERTIES, REQUIRED, AP> = TYPE extends "integer" | "number" | "boolean" | "null" | "string"
+export type JsonSchemaPrimitiveType<TYPE, ITEM, PROPERTIES, REQUIRED, AP, FORMAT = never> = TYPE extends "integer" | "number" | "boolean" | "null"
     ? JsonSchemaSimpleTypes<TYPE>
+    : TYPE extends "string"
+    ? JsonSchemaStringWithFormat<TYPE, FORMAT>
     : TYPE extends "object"
     ? JsonSchemaObjectType<PROPERTIES, REQUIRED, AP>
     : TYPE extends "array"
@@ -85,6 +97,7 @@ export type JsonSchemaType<T> = T extends {
     additionalProperties?: infer AP
     enum?: infer ENUM
     const?: infer CONST
+    format?: infer FORMAT
 }
     ? ONE_OF extends ReadonlyArray<any>
         ? ArrayOfJsonSchemasType<ONE_OF>
@@ -96,9 +109,9 @@ export type JsonSchemaType<T> = T extends {
         ? ENUM_VALUE
         : {} extends CONST
         ? TYPE extends string
-            ? JsonSchemaPrimitiveType<TYPE, ITEM, PROPERTIES, REQUIRED, AP>
+            ? JsonSchemaPrimitiveType<TYPE, ITEM, PROPERTIES, REQUIRED, AP, FORMAT>
             : TYPE extends ReadonlyArray<infer TYPES>
-            ? JsonSchemaPrimitiveType<TYPES, ITEM, PROPERTIES, REQUIRED, AP>
+            ? JsonSchemaPrimitiveType<TYPES, ITEM, PROPERTIES, REQUIRED, AP, FORMAT>
             : any
         : CONST
     : never

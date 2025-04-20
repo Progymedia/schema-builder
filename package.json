@@ -1,7 +1,7 @@
 {
-    "name": "@serafin/schema-builder",
-    "version": "0.18.17",
-    "description": "A Typescript JSON Schema library that creates a schema and its type at the same time",
+    "name": "@progymedia/schema-builder",
+    "version": "0.19.00",
+    "description": "A fork of serafin-labs/SchemaBuilder that adds some functionnalities. A Typescript JSON Schema library that creates a schema and its type at the same time",
     "main": "./lib/cjs/index.js",
     "exports": "./lib/cjs/index.js",
     "types": "./lib/cjs/index.d.ts",
@@ -21,7 +21,7 @@
     "license": "MIT",
     "repository": {
         "type": "git",
-        "url": "https://github.com/serafin-labs/schema-builder"
+        "url": "https://github.com/Progymedia/schema-builder"
     },
     "dependencies": {
         "ajv": "^8.13.0",
@@ -56,6 +56,6 @@
         "build:cjs": "tsc --project tsconfig.cjs.json",
         "build:esm": "tsc",
         "fix": "echo '{ \"type\": \"module\" }' > lib/esm/package.json && echo '{ \"type\": \"commonjs\" }' > lib/cjs/package.json",
-        "prepublishOnly": "npm install && rm -rf ./lib && npm run build && npm test"
+        "prepublishOnly": "pnpm install && rm -rf ./lib && pnpm build && pnpm test"
     }
 }
