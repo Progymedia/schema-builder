@@ -1336,4 +1336,175 @@ describe("Schema Builder Date Support", function () {
         // The actual value coercion would be handled by AJV when useDefaults is true
         expect(schema.schema.default).to.equal(now.toISOString())
     })
+    it("should parse JSON with ISO date strings and convert them to Date objects", function () {
+        const schema = SB.emptySchema().addString("id").addDate("createdAt").addDate("updatedAt", {}, false)
+
+        // JSON with string dates
+        const jsonData = {
+            id: "123",
+            createdAt: "2023-04-20T12:30:45Z",
+        }
+
+        // Type assertion needed since input is string dates but output is Date objects
+        const parsedData = schema.parse(jsonData)
+
+        expect(parsedData.id).to.equal("123")
+        expect(parsedData.createdAt).to.be.instanceOf(Date)
+        expect(parsedData.createdAt.toISOString()).to.equal("2023-04-20T12:30:45.000Z")
+    })
+
+    it("should parse JSON with nested date fields", function () {
+        const schema = SB.emptySchema().addString("id").addProperty("metadata", SB.emptySchema().addDate("created").addDate("updated", {}, false))
+
+        const jsonData = {
+            id: "123",
+            metadata: {
+                created: "2023-04-20T12:30:45Z",
+                updated: "2023-04-21T10:15:20Z",
+            },
+        }
+
+        // Type assertion to help TypeScript understand the shape
+        const parsedData = schema.parse(jsonData) as {
+            id: string
+            metadata: {
+                created: Date
+                updated?: Date
+            }
+        }
+
+        expect(parsedData.id).to.equal("123")
+        expect(parsedData.metadata.created).to.be.instanceOf(Date)
+        expect(parsedData.metadata.updated).to.be.instanceOf(Date)
+        expect(parsedData.metadata.created.toISOString()).to.equal("2023-04-20T12:30:45.000Z")
+        expect(parsedData.metadata.updated!.toISOString()).to.equal("2023-04-21T10:15:20.000Z")
+    })
+
+    it("should parse JSON with array of dates", function () {
+        const schema = SB.emptySchema().addString("id").addArray("eventDates", SB.dateSchema())
+
+        const jsonData = {
+            id: "123",
+            eventDates: ["2023-04-20T12:30:45Z", "2023-04-21T10:15:20Z", "2023-04-22T15:45:30Z"],
+        }
+
+        const parsedData = schema.parse(jsonData)
+
+        expect(parsedData.id).to.equal("123")
+        expect(parsedData.eventDates).to.be.an("array").of.length(3)
+        expect(parsedData.eventDates[0]).to.be.instanceOf(Date)
+        expect(parsedData.eventDates[1]).to.be.instanceOf(Date)
+        expect(parsedData.eventDates[2]).to.be.instanceOf(Date)
+        expect(parsedData.eventDates[0].toISOString()).to.equal("2023-04-20T12:30:45.000Z")
+    })
+
+    it("should parse JSON with array of objects containing dates", function () {
+        const schema = SB.emptySchema().addString("id").addArray("events", SB.emptySchema().addString("action").addDate("timestamp"))
+
+        const jsonData = {
+            id: "123",
+            events: [
+                { action: "login", timestamp: "2023-04-20T12:30:45Z" },
+                { action: "update", timestamp: "2023-04-21T10:15:20Z" },
+                { action: "logout", timestamp: "2023-04-22T15:45:30Z" },
+            ],
+        }
+
+        const parsedData = schema.parse(jsonData)
+
+        expect(parsedData.id).to.equal("123")
+        expect(parsedData.events).to.be.an("array").of.length(3)
+        expect(parsedData.events[0].timestamp).to.be.instanceOf(Date)
+        expect(parsedData.events[1].timestamp).to.be.instanceOf(Date)
+        expect(parsedData.events[2].timestamp).to.be.instanceOf(Date)
+        expect(parsedData.events[0].action).to.equal("login")
+        expect(parsedData.events[0].timestamp.toISOString()).to.equal("2023-04-20T12:30:45.000Z")
+    })
+
+    it("should parse a list of JSON objects with date fields", function () {
+        const schema = SB.emptySchema().addString("id").addDate("timestamp")
+
+        const jsonDataList = [
+            { id: "1", timestamp: "2023-04-20T12:30:45Z" },
+            { id: "2", timestamp: "2023-04-21T10:15:20Z" },
+            { id: "3", timestamp: "2023-04-22T15:45:30Z" },
+        ]
+
+        const parsedList = schema.parseList(jsonDataList)
+
+        expect(parsedList).to.be.an("array").of.length(3)
+        expect(parsedList[0].id).to.equal("1")
+        expect(parsedList[0].timestamp).to.be.instanceOf(Date)
+        expect(parsedList[1].timestamp).to.be.instanceOf(Date)
+        expect(parsedList[2].timestamp).to.be.instanceOf(Date)
+        expect(parsedList[0].timestamp.toISOString()).to.equal("2023-04-20T12:30:45.000Z")
+    })
+
+    it("should reject invalid JSON during parsing", function () {
+        const schema = SB.emptySchema().addString("id").addDate("timestamp")
+
+        const invalidJson = {
+            id: "1",
+            timestamp: "not-a-valid-date",
+        }
+
+        expect(() => schema.parse(invalidJson as any)).to.throw()
+    })
+
+    it("should handle null values in nullable date fields during parsing", function () {
+        const schema = SB.emptySchema().addString("id").addDate("required").addDate("nullable", {}, true, true)
+
+        const jsonData = {
+            id: "123",
+            required: "2023-04-20T12:30:45Z",
+            nullable: null,
+        }
+
+        const parsedData = schema.parse(jsonData)
+
+        expect(parsedData.id).to.equal("123")
+        expect(parsedData.required).to.be.instanceOf(Date)
+        expect(parsedData.nullable).to.be.null
+    })
+
+    it("should parse from a JSON Schema with date-time format", function () {
+        const jsonSchema = {
+            type: "object",
+            properties: {
+                id: { type: "string" },
+                created: { type: "string", format: "date-time" },
+                metadata: {
+                    type: "object",
+                    properties: {
+                        updated: { type: "string", format: "date-time" },
+                    },
+                },
+            },
+            required: ["id", "created"],
+        } as const
+
+        const schema = SB.fromJsonSchema(jsonSchema)
+
+        const jsonData = {
+            id: "123",
+            created: "2023-04-20T12:30:45Z",
+            metadata: {
+                updated: "2023-04-21T10:15:20Z",
+            },
+        }
+
+        // Type assertion to help TypeScript understand the shape
+        const parsedData = schema.parse(jsonData) as {
+            id: string
+            created: Date
+            metadata?: {
+                updated?: Date
+            }
+        }
+
+        expect(parsedData.id).to.equal("123")
+        expect(parsedData.created).to.be.instanceOf(Date)
+        // Use optional chaining to avoid "possibly undefined" errors
+        expect(parsedData.metadata?.updated).to.be.instanceOf(Date)
+    })
 })

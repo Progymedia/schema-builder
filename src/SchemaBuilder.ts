@@ -1,12 +1,12 @@
 import Ajv, { Options, ValidateFunction } from "ajv"
-import VError from "verror"
-import _ from "lodash"
-import addFormats from "ajv-formats"
-import { JsonSchemaType } from "./JsonSchemaType.js"
 import {
+    AllOf,
     Combine,
     DeepPartial,
     Merge,
+    Nullable,
+    ObjectSchemaDefinition,
+    OneOf,
     Overwrite,
     PartialProperties,
     Rename,
@@ -14,13 +14,14 @@ import {
     TransformProperties,
     TransformPropertiesToArray,
     UnwrapArrayProperties,
-    Nullable,
-    OneOf,
-    AllOf,
-    ObjectSchemaDefinition,
 } from "./TransformationTypes.js"
 import { JSONSchema, JSONSchemaTypeName } from "./JsonSchema.js"
-import { throughJsonSchema, cloneJSON, setRequired } from "./utils.js"
+import { cloneJSON, setRequired, throughJsonSchema } from "./utils.js"
+
+import { JsonSchemaType } from "./JsonSchemaType.js"
+import VError from "verror"
+import _ from "lodash"
+import addFormats from "ajv-formats"
 import { createPropertyAccessor } from "./PropertyAccessor.js"
 
 /**
@@ -1200,6 +1201,104 @@ export class SchemaBuilder<T> {
                 minItems: 1,
             })
         }
+    }
+
+    /**
+     * Parse and validate JSON data, converting string date-time formats to Date objects
+     * This method validates the input and converts ISO 8601 strings to JavaScript Date objects
+     * based on the schema definition.
+     *
+     * @param data The JSON data to parse and validate
+     * @returns The validated data with ISO 8601 strings converted to Date objects
+     */
+    parse<U extends Record<string, any>>(data: U): T {
+        // Create a copy of the data to avoid modifying the original
+        const dataCopy = JSON.parse(JSON.stringify(data))
+
+        // First validate the data to ensure it matches the schema
+        this.validate(dataCopy)
+
+        // Then transform ISO date strings to Date objects
+        return this.transformISOStringsToDate(dataCopy, this.schemaObject)
+    }
+
+    /**
+     * Transform ISO 8601 strings to Date objects based on schema definition
+     * @private
+     */
+    private transformISOStringsToDate<U>(data: U, schema?: JSONSchema): any {
+        // Handle null or undefined
+        if (data == null) {
+            return data
+        }
+
+        // Handle Date objects (no transformation needed)
+        if (data instanceof Date) {
+            return data
+        }
+
+        // Handle strings that match date-time format based on schema or try to detect ISO format
+        if (typeof data === "string") {
+            // Check if schema explicitly defines this as a date-time format
+            const isDateTimeField =
+                schema && (schema.type === "string" || (Array.isArray(schema.type) && schema.type.includes("string"))) && schema.format === "date-time"
+
+            // Try to detect ISO 8601 date format
+            const isIsoDateString = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d+)?(Z|[+-]\d{2}:\d{2})$/.test(data)
+
+            if (isDateTimeField || isIsoDateString) {
+                try {
+                    const dateObj = new Date(data)
+                    // Check if valid date (invalid dates like "2023-99-99" will parse but result in Invalid Date)
+                    if (!isNaN(dateObj.getTime())) {
+                        return dateObj
+                    }
+                } catch (e) {
+                    // If date parsing fails, return original string
+                }
+            }
+            return data
+        }
+
+        // Handle arrays by processing each item
+        if (Array.isArray(data)) {
+            const itemSchema = schema?.items && !Array.isArray(schema.items) ? (schema.items as JSONSchema) : undefined
+
+            return data.map((item) => this.transformISOStringsToDate(item, itemSchema || {}))
+        }
+
+        // Handle objects by processing each property
+        if (data !== null && typeof data === "object") {
+            const result: Record<string, any> = {}
+
+            for (const key in data) {
+                if (Object.prototype.hasOwnProperty.call(data, key)) {
+                    const propertySchema = schema?.properties?.[key] as JSONSchema | undefined
+                    result[key] = this.transformISOStringsToDate(data[key], propertySchema)
+                }
+            }
+
+            return result
+        }
+
+        // Return other primitives as is
+        return data
+    }
+
+    /**
+     * Parse and validate an array of JSON data, converting string date-time formats to Date objects
+     * @param dataList The array of JSON data to parse and validate
+     * @returns The validated data array with ISO 8601 strings converted to Date objects
+     */
+    parseList<U extends Record<string, any>>(dataList: U[]): T[] {
+        // Create a copy of the data to avoid modifying the original
+        const dataCopy = JSON.parse(JSON.stringify(dataList))
+
+        // First validate the list to ensure it matches the schema
+        this.validateList(dataCopy)
+
+        // Then transform each item
+        return dataCopy.map((item: any) => this.transformISOStringsToDate(item, this.schemaObject))
     }
 
     /**
