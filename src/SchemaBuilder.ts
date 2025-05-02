@@ -1215,11 +1215,66 @@ export class SchemaBuilder<T> {
         // Create a copy of the data to avoid modifying the original
         const dataCopy = JSON.parse(JSON.stringify(data))
 
+        // Transform string numbers to actual numbers
+        const transformedData = this.transformStringToNumber(dataCopy, this.schemaObject)
+
         // First validate the data to ensure it matches the schema
-        this.validate(dataCopy)
+        this.validate(transformedData)
 
         // Then transform ISO date strings to Date objects
-        return this.transformISOStringsToDate(dataCopy, this.schemaObject)
+        return this.transformISOStringsToDate(transformedData, this.schemaObject)
+    }
+
+    /**
+     * Transform data types before validation (e.g., string to number conversion)
+     * @private
+     */
+    private transformStringToNumber<U>(data: U, schema?: JSONSchema): any {
+        // Handle null or undefined
+        if (data == null) {
+            return data
+        }
+
+        // Handle strings that should be numbers based on schema
+        if (typeof data === "string" && schema) {
+            const schemaType = Array.isArray(schema.type) ? schema.type : [schema.type]
+
+            // Check if schema defines this as a number or integer
+            const isNumberField = schemaType.includes("number") || schemaType.includes("integer")
+
+            if (isNumberField) {
+                // Try to convert string to number if it's a valid number string
+                const numValue = Number(data)
+                if (!isNaN(numValue)) {
+                    return schema.type === "integer" ? Math.floor(numValue) : numValue
+                }
+            }
+
+            return data
+        }
+
+        // Handle arrays by processing each item
+        if (Array.isArray(data)) {
+            const itemSchema = schema?.items && !Array.isArray(schema.items) ? (schema.items as JSONSchema) : undefined
+            return data.map((item) => this.transformStringToNumber(item, itemSchema))
+        }
+
+        // Handle objects by processing each property
+        if (data !== null && typeof data === "object") {
+            const result: Record<string, any> = {}
+
+            for (const key in data) {
+                if (Object.prototype.hasOwnProperty.call(data, key)) {
+                    const propertySchema = schema?.properties?.[key] as JSONSchema | undefined
+                    result[key] = this.transformStringToNumber(data[key], propertySchema)
+                }
+            }
+
+            return result
+        }
+
+        // Return other primitives as is
+        return data
     }
 
     /**
