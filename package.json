@@ -1,6 +1,6 @@
 {
     "name": "@progymedia/schema-builder",
-    "version": "0.19.02",
+    "version": "0.19.2",
     "description": "A fork of serafin-labs/SchemaBuilder that adds some functionnalities. A Typescript JSON Schema library that creates a schema and its type at the same time",
     "main": "./lib/cjs/index.js",
     "exports": "./lib/cjs/index.js",
